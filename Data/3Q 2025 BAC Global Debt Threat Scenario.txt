@@ -1,0 +1,64 @@
+3Q 2025 BAC Global Debt Threat Scenario
+
+BAC-Global Debt Threat Scenario (Summary)
+
+After a few quarters of expansion above baseline, a sizable recession builds up. US Real GDP ("RGDP") growth declines by a maximum quarter-over-quarter annualized ("QoQ ann.") rate of 4.0%. RGDP level does not meaningfully recover and remains well below baseline level by the end of the scenario. The unemployment rate ("UR") likewise, after a few quarters below baseline, peaks at 7.8% before retracing and remaining above baseline.
+The Federal Reserve begins cutting rates early in the scenario and keeps rates low despite elevated inflation prints. The Fed cuts until 1Q 2026. The average effective policy rate reaches 0.9% in 2Q 2026.
+Short-term rates drop from the start of the horizon, with the US 3-month Treasury yield ("UST 3M") declining from 4.3% to 1.7% by 3Q 2026.
+
+US Treasury 10Y ("UST 10Y") rise from the start of the horizon, moving from 4.4% in 2Q 2025 to 6.5% in 1Q 2026. The yield curve (10Y to 3M) steepens significantly as the UST 10Y rises and the short-term rates drop.
+After briefly edging high and above baseline, US equity prices ("S&P 500") decline by 33.0% by 3Q 2026, and corporate spreads widen as equity volatility rises further.
+Home ("HPI") and Commercial ("CREPI") Real estate prices incur maximum cumulative declines of approximately 20.0% and 19.8%, respectively.
+
+Brent Oil rises from its spot of $67 for the forecast horizon to end at $88 per barrel, as Inflation persists throughout the scenario.
+Headline Consumer Price Index ("HCPI") and Core CPI ("CCPI") rise quickly from the 2Q 2025 spot values of 2.6% and 3.0% in year-over-year ("YoY) terms, to reach 7.0% and 6.6% respectively by 2Q 2026 before a modest retracement by the end of the projection horizon.
+Economies abroad also experience an early period of growth slightly more benign than baseline followed by sizable recessions with incipient recoveries towards the end of horizon, accompanied by US dollar depreciation early on (with the exception of the Japanese Yen), reverting towards the latter half of the horizon.
+
+
+BAC-Global Debt Threat Scenario (Narrative)
+
+Introduction
+The Bank of America Corporation ("BAC") Global Debt Threat (BAC-GDT) scenario intends to test BAC against a backdrop of a more growth oriented monetary policy stance that tolerates higher inflation, accompanied by downgrades in US Debt, weaker US Dollar, steepening yield curve and a sizable contraction in the US economy with global spillovers.
+Economic growth and labor market
+The scenario is characterized by a recession starting after a brief early period where the economy fares slightly better than baseline. US RGDP declines a maximum 4.0% QoQ ann., and the unemployment rate, after being below baseline until 1Q 2026, rises to reach a peak of 7.8% in 2Q 2026. The economy does not recover until the last quarters of the horizon, and even by then growth is well below baseline. All told, RGDP falls a cumulative 3.5% before a minimal recovery.
+Inflation, interest rates and central bank policies.
+
+A significant turnover in Federal Reserve leadership, including Board Governors and regional Presidents, shifts to favor an expansionary monetary policy with greater tolerance for inflation. As a result, the Fed swiftly cuts policy rates by 100 basis points ("bps"), eventually lowering the target Federal Funds rate falling to a 0.75% to 1% range by the end of 1Q 2026. This expansionary monetary policy provides a short-term boost to growth and employment as consumers and businesses front-load spending and investment. Concurrently, the U.S. Treasury adjusts its issuance strategy, favoring short-term T-bills to capitalize on low interest rates, which increases bill supply and drives bill yields higher relative to other short-term rates like the federal funds rate.
+The Federal Reserve, undeterred by rising inflation readings, holds rates throughout the horizon as economic activity deteriorates. As the policy rates fall, short-term interest rates (UST 3M) also decline from 4.3% at 2Q 2025 to reach 1.7% by 3Q 2026. As concerns mount surrounding the US fiscal position, long-term rates, in contrast, rise to reach 6.5% by 1Q 2026. The yield curve steepens from the outset of the scenario, with the UST 10Y to 3M spread rising to 474 bps by 3Q 2026.
+CCPI rises rapidly in the first half of the horizon, moving steadily from 3.0% to 6.6% YoY by 2Q 2026. Similarly, HCPI edges higher rapidly to 7.0% YoY by 2Q 2026. In both cases, inflation begins to revert towards baseline levels as the economy recovers but remains relatively elevated by the end of the horizon.
+
+As inflation expectations become unanchored and inflation remains elevated, Brent Oil price moves higher steadily from $67 to $88 per barrel by the end of the horizon.
+Despite rising inflation, driven by lower rates and tariff-related cost pressures, the Fed maintains its accommodative stance, viewing these inflationary forces as transitory. However, this approach fuels a cycle of rising inflation expectations and a pronounced steepening of the yield curve. Concerns over the sustainability of U.S. deficits and debt levels leads to a two-notch downgrade of the country's long-term credit rating to AA-, although the short-term rating remains at P1.
+
+The Fed is assumed to keep the balance sheet size steady from the June 30, 2025 level at first but expands it from 2Q 2026. With policy rates at 1% and the economy contracting, the FRB engages in large-scale asset purchases in 2Q 2026. The FRB's balance sheet expands through the outright purchase of U.S. Treasuries and mortgage-backed securities in the increments outlined below. The asset purchases are matched by allocating 50% to Reserves, 10% to currency, 0% to Repo, 40% to all other liabilities, which include the Treasury General Account.	
+
+As financing costs surge, aggregate demand contracts, prompting firms to delay investment and households to reduce consumption, triggering a sharp decline in equity markets. Foreign investors, alarmed by the perceived instability in U.S. monetary policy, repatriate capital, which results in a weakening of the dollar. These dynamics culminate in a recession during the latter half of the scenario, with global spillover effects. In response, the Fed initiates quantitative easing in 2Q 2026 to contain government borrowing costs, though its effectiveness is limited by rising term premiums. Ultimately, diminished confidence in U.S. assets undermines the country's ability to sustain persistent trade deficits, necessitating an improvement in the current account balance. This adjustment requires a reduction in real consumption, resulting in a permanent decline in U.S. living standards.
+
+
+Equities and credit spreads
+US equity prices maintain solid growth, rising over baseline until 4Q 2025, but decline rapidly later as the economy tips into recession. The broader S&P 500 eventually falls by 33.0% from spot by 3Q 2026 but recovers partially, ending just 1.8% below spot. The tech heavy NASDAQ index falls more deeply than the S&P 500, reaching a maximum cumulative decline of 41.3% by 3Q 2026. Equity volatility, as measured by VIX, jumps quickly to 45 by 3Q 2026, before gradually receding to 22 by the end of the projection horizon.
+Corporate spreads widen as economic uncertainty increases, with Moody's Aaa and Baa spreads to 30-year US Treasuries peaking at 152 bps and 406 bps, respectively, before moderate retracements. Similarly, BAML corporate spreads (AAA-AA and A-BBB to 30-year US Treasuries) also widen to 270 bps and 399 bps, respectively before retracing.
+
+
+Housing and commercial real estate prices
+HPI and CREPI reach maximum cumulative declines of approximately 20.0% and 19.8%, respectively. HPI and CREPI show a recovery in the final quarters of the projection horizon, although both end 14.1% and 13.8% below their spot levels respectively at the end of the horizon.
+
+
+International developments
+Internationally, economies experience similar expansions over baseline in the early quarters, followed by large protracted recessions settling at below baseline minimal growth by the end of the horizon. UK Real GDP drops early, reaching a maximum cumulative decline of 5.2% by 1Q 2028; for the Eurozone the maximum Real GDP cumulative drop is 3.9% by 4Q 2027. Japan also suffers a recession, dropping a cumulative 6.4% by 3Q 2028.
+
+Chinese Real GDP growth drops 7.1% QoQ ann. in 4Q 2026 (dropping cumulatively by a maximum of 5.7%), before gradually rising to a still very low 0.7% QoQ ann. by the end of the projection horizon.
+
+As the role of the USD as a safe haven currency is called into question, it weakens against other currencies with a retracement in the second half of the horizon. The Euro and the UK pound appreciate against the dollar (20.2% and 19.5%, respectively). The dollar depreciates against Developing Asia currencies by 6.8% and against the Japanese Yen by 10.5%. All currencies begin to revert immediately after hitting their peak depreciations.
+
+
+Additional International Narrative
+On the international portion of the scenario, we assume that the term premium and sudden stop shocks that hit the United States have international spillovers. Capital outflows from the United States weaken the dollar against a broad basket of currencies, while the slowdown in US growth impacts other advanced and emerging economies. This produces a synchronized global downturn. Some foreign capital moves into hard assets such as gold, real estate, and international bond markets. However, unlike previous recessions, global long rates do not fall because investors demand higher compensation for risk, reflecting an elevated global term premium and some foreign capital destruction from the repatriation shock. This creates an environment of tighter financial conditions even as capital shifts across borders.
+Central banks respond to the slump by drastically cutting short-term policy rates, attempting to counteract the contraction in demand, the rising level of unemployment, and slow down the pace of currency appreciation. This puts a floor on the depreciating dollar and causes a modest reversal, although the dollar still ends the scenario weaker than at the onset. Unlike previous global slowdowns, inflation rates rise. A combination of factors drives this including easier monetary policy, FX interventions, particularly in China, unanchored inflation expectations, and commodity prices rise due to currency shifts and supply dynamics. The result is a mix of weak growth and elevated price pressures abroad, just like the United States.
+
+
+Additional US Economic Narrative - Ops Loss
+Ops loss workshop assumes driver to be market volatility, increased geopolitical tension, and civil unrest create added operational turmoil and business continuity disruptions not included in narrative.
+
+
+
