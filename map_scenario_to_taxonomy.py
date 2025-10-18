@@ -1,4 +1,6 @@
-import pandas as pd, re, numpy as np
+import pandas as pd
+import numpy as np
+import re
 from sentence_transformers import SentenceTransformer, util
 from pathlib import Path
 
