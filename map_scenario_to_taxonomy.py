@@ -1,5 +1,11 @@
 """Map scenario sentences to taxonomy labels with lightweight fallbacks.
 
+Running the module as a script accepts a ``--similarity-mode`` flag that selects
+between the original ``sentence-transformers`` backend and the lightweight
+bag-of-words routine.  The default ``auto`` mode uses embeddings when the
+dependency is installed locally, otherwise it downgrades gracefully to the
+standard-library implementation.
+
 This script originally depended on heavy third-party libraries such as
 ``pandas`` and ``sentence_transformers``. Those packages are not available in
 the execution environment used for automated testing, so the import failures
@@ -7,17 +13,24 @@ prevented the script from running at all.  To keep the workflow functional we
 now fall back to standard-library implementations whenever the optional
 dependencies are missing.  When the libraries are available locally the
 behaviour remains unchanged.
+
+In particular, the script can ingest tabular inputs (``.csv`` or ``.xlsx``)
+without ``pandas`` by relying on the standard ``csv`` module and a very small
+OpenXML parser for Excel workbooks.  The richer dependency stack is still used
+automatically whenever it is available locally.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import math
 import re
-from collections import defaultdict
-from difflib import SequenceMatcher
+import zipfile
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable, List, Sequence
+from xml.etree import ElementTree as ET
 
 try:  # Optional dependency
     import pandas as pd  # type: ignore
@@ -46,18 +59,181 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 scenario_path = DATA_DIR / "3Q 2025 BAC Global Debt Threat Scenario.txt"
-taxonomy_path = DATA_DIR / "Primary Risk Taxonomy.txt"
+taxonomy_candidates = [
+    DATA_DIR / "BAC_GDT_2025_Risk_Taxonomy.xlsx",
+    DATA_DIR / "Primary Risk Taxonomy.txt",
+]
 output_path = DATA_DIR / "GDT_Taxonomy_Similarity.xlsx"
+
+for candidate in taxonomy_candidates:
+    if candidate.exists():
+        taxonomy_path = candidate
+        break
+else:  # pragma: no cover - defensive guard
+    raise FileNotFoundError("No taxonomy source file found in the data directory.")
+
+# ======== ARGUMENTS ========
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Map scenario sentences to taxonomy labels using either "
+            "sentence-transformers embeddings or a lightweight bag-of-words "
+            "similarity routine."
+        )
+    )
+    parser.add_argument(
+        "--similarity-mode",
+        choices=("auto", "sentence-transformer", "bow"),
+        default="auto",
+        help=(
+            "Select the similarity backend. 'auto' prefers sentence-transformers "
+            "when installed, otherwise falls back to the bag-of-words model."
+        ),
+    )
+    return parser.parse_args()
+
+
+args = _parse_args()
 
 # ======== LOAD FILES ========
 scenario_text = scenario_path.read_text(encoding="utf-8")
-taxonomy_text = taxonomy_path.read_text(encoding="utf-8")
 
-# Extract taxonomy labels (remove header lines)
-taxonomy_labels = [
-    line.strip() for line in taxonomy_text.splitlines()
-    if line.strip() and not any(h in line for h in ["Distinct", "Risk", "Standardized"])
-]
+
+def _excel_column_index(cell_ref: str) -> int:
+    letters = "".join(ch for ch in cell_ref if ch.isalpha())
+    index = 0
+    for ch in letters:
+        index = index * 26 + (ord(ch.upper()) - 64)
+    return max(index - 1, 0)
+
+
+def _read_xlsx_without_pandas(path: Path) -> List[List[str]]:
+    """Parse the first worksheet of ``path`` into a list-of-lists structure."""
+
+    with zipfile.ZipFile(path) as zf:
+        main_ns = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        rel_ns = {
+            "rel": "http://schemas.openxmlformats.org/package/2006/relationships"
+        }
+
+        shared_strings: List[str] = []
+        if "xl/sharedStrings.xml" in zf.namelist():
+            shared_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            for si in shared_root.findall("main:si", main_ns):
+                text = "".join(
+                    t.text or "" for t in si.findall(".//main:t", main_ns)
+                )
+                shared_strings.append(text)
+
+        rel_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {
+            rel.attrib["Id"]: rel.attrib["Target"]
+            for rel in rel_root.findall("rel:Relationship", rel_ns)
+        }
+
+        workbook_root = ET.fromstring(zf.read("xl/workbook.xml"))
+        sheet_paths: List[str] = []
+        for sheet in workbook_root.findall("main:sheets/main:sheet", main_ns):
+            rel_id = sheet.attrib.get(
+                "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+            )
+            if not rel_id:
+                continue
+            target = rel_map.get(rel_id)
+            if not target:
+                continue
+            sheet_paths.append("xl/" + target if not target.startswith("/") else target.lstrip("/"))
+        if not sheet_paths:
+            raise ValueError(f"Unable to locate worksheets in {path}.")
+
+        sheet_root = ET.fromstring(zf.read(sheet_paths[0]))
+
+        rows: List[List[str]] = []
+        for row_el in sheet_root.findall("main:sheetData/main:row", main_ns):
+            row_values: dict[int, str] = {}
+            max_idx = -1
+            for cell in row_el.findall("main:c", main_ns):
+                ref = cell.attrib.get("r", "A")
+                idx = _excel_column_index(ref)
+                max_idx = max(max_idx, idx)
+                value_el = cell.find("main:v", main_ns)
+                if value_el is None:
+                    continue
+                raw = value_el.text or ""
+                if cell.attrib.get("t") == "s":
+                    try:
+                        raw = shared_strings[int(raw)]
+                    except (IndexError, ValueError):
+                        raw = ""
+                row_values[idx] = raw
+            if max_idx >= 0:
+                row = [row_values.get(i, "") for i in range(max_idx + 1)]
+            else:
+                row = []
+            rows.append(row)
+    return rows
+
+
+def _load_tabular_column(path: Path, column_index: int = 0) -> List[str]:
+    """Return the non-empty values from ``column_index`` in ``path``."""
+
+    suffix = path.suffix.lower()
+    if suffix == ".txt":
+        return [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not any(
+                header in line for header in ["Distinct", "Risk", "Standardized"]
+            )
+        ]
+
+    if suffix == ".csv":
+        if _HAS_PANDAS:
+            series = pd.read_csv(path, usecols=[column_index]).iloc[:, 0]
+            return [
+                str(value).strip()
+                for value in series.dropna()
+                if str(value).strip()
+            ]
+        with path.open("r", encoding="utf-8", newline="") as fh:
+            reader = csv.reader(fh)
+            rows = list(reader)
+        if rows:
+            rows = rows[1:]
+        values: List[str] = []
+        for row in rows:
+            if column_index < len(row):
+                value = row[column_index].strip()
+                if value:
+                    values.append(value)
+        return values
+
+    if suffix in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+        if _HAS_PANDAS:
+            frame = pd.read_excel(path, usecols=[column_index])
+            series = frame.iloc[:, 0]
+            return [
+                str(value).strip()
+                for value in series.dropna()
+                if str(value).strip()
+            ]
+        rows = _read_xlsx_without_pandas(path)
+        if rows:
+            rows = rows[1:]
+        values = []
+        for row in rows:
+            if column_index < len(row):
+                value = str(row[column_index]).strip()
+                if value:
+                    values.append(value)
+        return values
+
+    raise ValueError(f"Unsupported file type for {path}")
+
+
+taxonomy_labels = _load_tabular_column(taxonomy_path, column_index=0)
 
 # Split scenario into sentences (long lines become separate analysis units)
 sentences = re.split(r'(?<=[.!?])\s+', scenario_text)
@@ -66,23 +242,63 @@ sentences = [s.strip() for s in sentences if len(s.split()) > 4]
 print(f"{len(sentences)} scenario sentences, {len(taxonomy_labels)} taxonomy labels loaded.")
 
 
-def _sequence_similarities(
+_TOKEN_PATTERN = re.compile(r"\b\w+\b")
+
+
+def _tokenize(text: str) -> List[str]:
+    """Lowercase tokenization used by the fallback similarity routine."""
+
+    return _TOKEN_PATTERN.findall(text.lower())
+
+
+def _vectorize(text: str) -> tuple[Counter[str], float]:
+    """Return bag-of-words counts and their Euclidean norm."""
+
+    counts: Counter[str] = Counter(_tokenize(text))
+    norm = math.sqrt(sum(value * value for value in counts.values()))
+    return counts, norm
+
+
+def _bow_cosine_similarities(
     source_sentences: Sequence[str],
     target_labels: Sequence[str],
 ) -> List[List[float]]:
-    """Compute pairwise similarity scores with standard library tools."""
+    """Compute cosine similarity on bag-of-words vectors as a fallback."""
+
+    sent_vectors = [_vectorize(sentence) for sentence in source_sentences]
+    label_vectors = [_vectorize(label) for label in target_labels]
 
     scores: List[List[float]] = []
-    for sent in source_sentences:
-        sent_scores: List[float] = []
-        for label in target_labels:
-            ratio = SequenceMatcher(None, sent.lower(), label.lower()).ratio()
-            sent_scores.append(ratio)
-        scores.append(sent_scores)
+    for sent_counts, sent_norm in sent_vectors:
+        row: List[float] = []
+        for label_counts, label_norm in label_vectors:
+            if not sent_norm or not label_norm:
+                row.append(0.0)
+                continue
+            overlap = sum(
+                sent_counts[token] * label_counts[token]
+                for token in sent_counts.keys() & label_counts.keys()
+            )
+            row.append(overlap / (sent_norm * label_norm))
+        scores.append(row)
     return scores
 
 
-if _HAS_ST:
+mode = args.similarity_mode
+use_sentence_transformer = False
+if mode == "sentence-transformer":
+    if _HAS_ST:
+        use_sentence_transformer = True
+    else:
+        print(
+            "sentence-transformers requested but unavailable; "
+            "falling back to bag-of-words cosine similarity."
+        )
+elif mode == "auto":
+    use_sentence_transformer = _HAS_ST
+
+
+if use_sentence_transformer:
     # ======== EMBEDDING MODEL ========
     model = SentenceTransformer("all-mpnet-base-v2")
     scenario_emb = model.encode(sentences, convert_to_tensor=True)
@@ -95,11 +311,14 @@ if _HAS_ST:
     else:
         cosine_scores = cosine_scores_matrix.cpu().tolist()
 else:
-    print(
-        "sentence-transformers not available; using SequenceMatcher for"
-        " approximate similarity scores."
-    )
-    cosine_scores = _sequence_similarities(sentences, taxonomy_labels)
+    if mode == "auto" and not _HAS_ST:
+        print(
+            "sentence-transformers not available; using bag-of-words cosine"
+            " similarity scores instead."
+        )
+    elif mode == "bow":
+        print("Bag-of-words similarity requested; skipping sentence-transformers.")
+    cosine_scores = _bow_cosine_similarities(sentences, taxonomy_labels)
 
 # ======== BUILD OUTPUT ========
 records = []
