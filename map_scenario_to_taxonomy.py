@@ -1,5 +1,11 @@
 """Map scenario sentences to taxonomy labels with lightweight fallbacks.
 
+Running the module as a script accepts a ``--similarity-mode`` flag that selects
+between the original ``sentence-transformers`` backend and the lightweight
+bag-of-words routine.  The default ``auto`` mode uses embeddings when the
+dependency is installed locally, otherwise it downgrades gracefully to the
+standard-library implementation.
+
 This script originally depended on heavy third-party libraries such as
 ``pandas`` and ``sentence_transformers``. Those packages are not available in
 the execution environment used for automated testing, so the import failures
@@ -16,6 +22,7 @@ automatically whenever it is available locally.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import math
 import re
@@ -64,6 +71,31 @@ for candidate in taxonomy_candidates:
         break
 else:  # pragma: no cover - defensive guard
     raise FileNotFoundError("No taxonomy source file found in the data directory.")
+
+# ======== ARGUMENTS ========
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Map scenario sentences to taxonomy labels using either "
+            "sentence-transformers embeddings or a lightweight bag-of-words "
+            "similarity routine."
+        )
+    )
+    parser.add_argument(
+        "--similarity-mode",
+        choices=("auto", "sentence-transformer", "bow"),
+        default="auto",
+        help=(
+            "Select the similarity backend. 'auto' prefers sentence-transformers "
+            "when installed, otherwise falls back to the bag-of-words model."
+        ),
+    )
+    return parser.parse_args()
+
+
+args = _parse_args()
 
 # ======== LOAD FILES ========
 scenario_text = scenario_path.read_text(encoding="utf-8")
@@ -252,7 +284,21 @@ def _bow_cosine_similarities(
     return scores
 
 
-if _HAS_ST:
+mode = args.similarity_mode
+use_sentence_transformer = False
+if mode == "sentence-transformer":
+    if _HAS_ST:
+        use_sentence_transformer = True
+    else:
+        print(
+            "sentence-transformers requested but unavailable; "
+            "falling back to bag-of-words cosine similarity."
+        )
+elif mode == "auto":
+    use_sentence_transformer = _HAS_ST
+
+
+if use_sentence_transformer:
     # ======== EMBEDDING MODEL ========
     model = SentenceTransformer("all-mpnet-base-v2")
     scenario_emb = model.encode(sentences, convert_to_tensor=True)
@@ -265,10 +311,13 @@ if _HAS_ST:
     else:
         cosine_scores = cosine_scores_matrix.cpu().tolist()
 else:
-    print(
-        "sentence-transformers not available; using bag-of-words cosine"
-        " similarity scores instead."
-    )
+    if mode == "auto" and not _HAS_ST:
+        print(
+            "sentence-transformers not available; using bag-of-words cosine"
+            " similarity scores instead."
+        )
+    elif mode == "bow":
+        print("Bag-of-words similarity requested; skipping sentence-transformers.")
     cosine_scores = _bow_cosine_similarities(sentences, taxonomy_labels)
 
 # ======== BUILD OUTPUT ========
