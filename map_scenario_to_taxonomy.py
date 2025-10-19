@@ -1,18 +1,21 @@
 """Map scenario sentences to taxonomy labels with lightweight fallbacks.
 
 Running the module as a script accepts a ``--similarity-mode`` flag that selects
-between the original ``sentence-transformers`` backend and the lightweight
-bag-of-words routine.  The default ``auto`` mode uses embeddings when the
-dependency is installed locally, otherwise it downgrades gracefully to the
-standard-library implementation.
+between a ``sentence-transformers`` backend, a TF–IDF lexical model, and the
+lightweight bag-of-words routine.  The default ``auto`` mode uses the
+best-available option depending on the locally installed dependencies.
 
-This script originally depended on heavy third-party libraries such as
-``pandas`` and ``sentence_transformers``. Those packages are not available in
-the execution environment used for automated testing, so the import failures
-prevented the script from running at all.  To keep the workflow functional we
-now fall back to standard-library implementations whenever the optional
-dependencies are missing.  When the libraries are available locally the
-behaviour remains unchanged.
+The script retains the original goal of functioning in restricted execution
+environments.  Heavy optional dependencies such as ``pandas``, ``numpy``,
+``sentence_transformers``, and ``scikit-learn`` are detected dynamically and the
+workflow downgrades gracefully when they are missing.
+
+When the richer stack *is* available the script provides a more detailed macro
+theme bridge analysis by reusing the logic that previously lived in
+``scenario_to_taxonomy_mapping_lw.py``.  This additional stage scores scenario
+sentences against macro themes using TF–IDF cosine similarity, expands the
+themes into linked taxonomy entries, and records the intermediate and direct
+similarity scores in dedicated Excel sheets.
 
 In particular, the script can ingest tabular inputs (``.csv`` or ``.xlsx``)
 without ``pandas`` by relying on the standard ``csv`` module and a very small
@@ -29,7 +32,7 @@ import re
 import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 from xml.etree import ElementTree as ET
 
 try:  # Optional dependency
@@ -47,6 +50,16 @@ except ImportError:  # pragma: no cover - triggered in minimal environments
     _HAS_NUMPY = False
 
 try:  # Optional dependency
+    from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
+    from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
+
+    _HAS_SKLEARN = True
+except ImportError:  # pragma: no cover - triggered in minimal environments
+    TfidfVectorizer = None  # type: ignore
+    cosine_similarity = None  # type: ignore
+    _HAS_SKLEARN = False
+
+try:  # Optional dependency
     from sentence_transformers import SentenceTransformer, util  # type: ignore
     _HAS_ST = True
 except ImportError:  # pragma: no cover - triggered in minimal environments
@@ -58,19 +71,20 @@ except ImportError:  # pragma: no cover - triggered in minimal environments
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
-scenario_path = DATA_DIR / "3Q 2025 BAC Global Debt Threat Scenario.txt"
-taxonomy_candidates = [
+DEFAULT_SCENARIO_PATH = DATA_DIR / "3Q 2025 BAC Global Debt Threat Scenario.txt"
+DEFAULT_TAXONOMY_CANDIDATES = [
     DATA_DIR / "BAC_GDT_2025_Risk_Taxonomy.xlsx",
     DATA_DIR / "Primary Risk Taxonomy.txt",
 ]
-output_path = DATA_DIR / "GDT_Taxonomy_Similarity.xlsx"
+DEFAULT_OUTPUT_PATH = DATA_DIR / "GDT_Taxonomy_Similarity.xlsx"
+DEFAULT_BRIDGE_PATH = DATA_DIR / "Macro_to_OpRisk_Bridge.xlsx"
 
-for candidate in taxonomy_candidates:
-    if candidate.exists():
-        taxonomy_path = candidate
-        break
-else:  # pragma: no cover - defensive guard
-    raise FileNotFoundError("No taxonomy source file found in the data directory.")
+
+def _discover_default_taxonomy_path() -> Path:
+    for candidate in DEFAULT_TAXONOMY_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return DEFAULT_TAXONOMY_CANDIDATES[0]
 
 # ======== ARGUMENTS ========
 
@@ -79,23 +93,68 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Map scenario sentences to taxonomy labels using either "
-            "sentence-transformers embeddings or a lightweight bag-of-words "
-            "similarity routine."
+            "sentence-transformers embeddings, a TF-IDF lexical model, "
+            "or a lightweight bag-of-words similarity routine."
         )
     )
     parser.add_argument(
         "--similarity-mode",
-        choices=("auto", "sentence-transformer", "bow"),
+        choices=("auto", "sentence-transformer", "tfidf", "bow"),
         default="auto",
         help=(
             "Select the similarity backend. 'auto' prefers sentence-transformers "
-            "when installed, otherwise falls back to the bag-of-words model."
+            "when installed, then TF-IDF if scikit-learn is available, "
+            "otherwise falls back to the bag-of-words model."
         ),
+    )
+    parser.add_argument(
+        "--scenario-path",
+        type=Path,
+        default=DEFAULT_SCENARIO_PATH,
+        help="Path to the scenario narrative text file.",
+    )
+    parser.add_argument(
+        "--taxonomy-path",
+        type=Path,
+        default=_discover_default_taxonomy_path(),
+        help="Path to the taxonomy source file (TXT, CSV, or XLSX).",
+    )
+    parser.add_argument(
+        "--bridge-path",
+        type=Path,
+        default=DEFAULT_BRIDGE_PATH if DEFAULT_BRIDGE_PATH.exists() else None,
+        help=(
+            "Optional path to the Macro-to-OpRisk bridge file. Provide when "
+            "macro theme analysis should be executed."
+        ),
+    )
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=DEFAULT_OUTPUT_PATH,
+        help="Destination Excel path for the similarity results.",
     )
     return parser.parse_args()
 
 
 args = _parse_args()
+
+scenario_path = args.scenario_path
+taxonomy_path = args.taxonomy_path
+output_path = args.output_path
+bridge_path: Optional[Path]
+if args.bridge_path and args.bridge_path.exists():
+    bridge_path = args.bridge_path
+else:
+    bridge_path = None
+    if args.bridge_path:
+        print(f"⚠️ Bridge file not found at {args.bridge_path}; skipping macro analysis.")
+
+if not scenario_path.exists():  # pragma: no cover - defensive guard
+    raise FileNotFoundError(f"Scenario narrative not found at {scenario_path}.")
+
+if not taxonomy_path.exists():  # pragma: no cover - defensive guard
+    raise FileNotFoundError(f"Taxonomy file not found at {taxonomy_path}.")
 
 # ======== LOAD FILES ========
 scenario_text = scenario_path.read_text(encoding="utf-8")
@@ -284,21 +343,241 @@ def _bow_cosine_similarities(
     return scores
 
 
-mode = args.similarity_mode
-use_sentence_transformer = False
-if mode == "sentence-transformer":
-    if _HAS_ST:
-        use_sentence_transformer = True
+def _tfidf_cosine_similarities(
+    source_sentences: Sequence[str],
+    target_labels: Sequence[str],
+) -> List[List[float]]:
+    """Compute cosine similarity scores using TF-IDF vectors."""
+
+    if not _HAS_SKLEARN:  # pragma: no cover - guarded by callers
+        raise RuntimeError("scikit-learn is required for TF-IDF similarity")
+
+    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
+    target_matrix = vectorizer.fit_transform([label.lower() for label in target_labels])
+    source_matrix = vectorizer.transform([sentence.lower() for sentence in source_sentences])
+    scores_matrix = cosine_similarity(source_matrix, target_matrix)
+    if _HAS_NUMPY:
+        return scores_matrix.tolist()
+    return [list(map(float, row)) for row in scores_matrix]
+
+
+def _run_macro_bridge_pipeline(
+    sentences: Sequence[str],
+    taxonomy_labels: Sequence[str],
+    bridge_path: Path,
+) -> Dict[str, "pd.DataFrame"]:
+    """Execute the macro-theme bridge pipeline when dependencies are available."""
+
+    if not _HAS_PANDAS:
+        print(
+            "⚠️ Macro theme bridge requested but pandas is unavailable; "
+            "skipping macro analysis."
+        )
+        return {}
+
+    if not _HAS_SKLEARN:
+        print(
+            "⚠️ Macro theme bridge requested but scikit-learn is unavailable; "
+            "skipping macro analysis."
+        )
+        return {}
+
+    suffix = bridge_path.suffix.lower()
+    if suffix in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+        loader = pd.read_excel
+    elif suffix == ".csv":
+        loader = pd.read_csv
     else:
         print(
-            "sentence-transformers requested but unavailable; "
-            "falling back to bag-of-words cosine similarity."
+            f"⚠️ Unsupported macro bridge file type '{bridge_path.suffix}'. "
+            "Skipping macro analysis."
         )
-elif mode == "auto":
-    use_sentence_transformer = _HAS_ST
+        return {}
+
+    try:
+        bridge_df = loader(bridge_path)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        print(f"⚠️ Unable to load macro bridge file: {exc}; skipping macro analysis.")
+        return {}
+
+    required_cols = {
+        "Macro_Theme_ID",
+        "Macro_Theme_Name",
+        "Macro_Theme_Description",
+        "Trigger_Keywords_Examples",
+        "Linked_Taxonomies",
+    }
+    missing = [col for col in required_cols if col not in bridge_df.columns]
+    if missing:
+        print(
+            "⚠️ Macro bridge file missing required columns "
+            f"{', '.join(missing)}; skipping macro analysis."
+        )
+        return {}
+
+    bridge_df = bridge_df.copy()
+    bridge_df["Macro_Text"] = (
+        bridge_df["Macro_Theme_Name"].astype(str)
+        + " "
+        + bridge_df["Macro_Theme_Description"].astype(str)
+        + " "
+        + bridge_df["Trigger_Keywords_Examples"].fillna("").astype(str)
+    )
+    macro_themes = bridge_df["Macro_Text"].tolist()
+
+    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
+    macro_vecs = vectorizer.fit_transform([theme.lower() for theme in macro_themes])
+    scenario_vecs = vectorizer.transform([sentence.lower() for sentence in sentences])
+    macro_scores = cosine_similarity(scenario_vecs, macro_vecs)
+
+    macro_records: List[Dict[str, object]] = []
+    for sent_idx, sent in enumerate(sentences):
+        scores = macro_scores[sent_idx]
+        ranked_indices = sorted(
+            range(len(scores)), key=lambda idx: scores[idx], reverse=True
+        )[:3]
+        for theme_idx in ranked_indices:
+            score = float(scores[theme_idx])
+            if score <= 0.05:
+                continue
+            row = bridge_df.iloc[theme_idx]
+            macro_records.append(
+                {
+                    "Scenario_Sentence": sent,
+                    "Macro_Theme_ID": row["Macro_Theme_ID"],
+                    "Macro_Theme_Name": row["Macro_Theme_Name"],
+                    "Similarity_Macro": round(score, 3),
+                }
+            )
+
+    if macro_records:
+        macro_df = pd.DataFrame(macro_records)
+    else:
+        macro_df = pd.DataFrame(
+            columns=[
+                "Scenario_Sentence",
+                "Macro_Theme_ID",
+                "Macro_Theme_Name",
+                "Similarity_Macro",
+            ]
+        )
+
+    if macro_df.empty:
+        macro_expanded = pd.DataFrame(
+            columns=[
+                "Scenario_Sentence",
+                "Macro_Theme_ID",
+                "Macro_Theme_Name",
+                "Similarity_Macro",
+                "Risk_Taxonomy",
+            ]
+        )
+    else:
+        macro_expanded = (
+            macro_df.merge(
+                bridge_df[["Macro_Theme_ID", "Linked_Taxonomies"]],
+                on="Macro_Theme_ID",
+                how="left",
+            )
+            .assign(
+                Linked_Taxonomies=lambda d: d["Linked_Taxonomies"]
+                .fillna("")
+                .astype(str)
+                .str.split(",")
+            )
+            .explode("Linked_Taxonomies")
+            .rename(columns={"Linked_Taxonomies": "Risk_Taxonomy"})
+        )
+        macro_expanded["Risk_Taxonomy"] = (
+            macro_expanded["Risk_Taxonomy"].fillna("").astype(str).str.strip()
+        )
+        macro_expanded = macro_expanded[macro_expanded["Risk_Taxonomy"] != ""]
+
+    tfidf_scores = _tfidf_cosine_similarities(sentences, taxonomy_labels)
+    direct_records: List[Dict[str, object]] = []
+    for sent_idx, sent in enumerate(sentences):
+        scores = tfidf_scores[sent_idx]
+        ranked_indices = sorted(
+            range(len(scores)), key=lambda idx: scores[idx], reverse=True
+        )[:5]
+        for tax_idx in ranked_indices:
+            score = float(scores[tax_idx])
+            if score <= 0.05:
+                continue
+            direct_records.append(
+                {
+                    "Scenario_Sentence": sent,
+                    "Risk_Taxonomy": taxonomy_labels[tax_idx],
+                    "Similarity_Taxonomy": round(score, 3),
+                }
+            )
+
+    if direct_records:
+        direct_df = pd.DataFrame(direct_records)
+    else:
+        direct_df = pd.DataFrame(
+            columns=["Scenario_Sentence", "Risk_Taxonomy", "Similarity_Taxonomy"]
+        )
+
+    if macro_expanded.empty:
+        agg = pd.DataFrame(columns=["Risk_Taxonomy", "Count", "Mean", "Max"])
+    else:
+        agg = (
+            macro_expanded.groupby("Risk_Taxonomy")["Similarity_Macro"]
+            .agg(Count="count", Mean="mean", Max="max")
+            .reset_index()
+            .sort_values("Mean", ascending=False)
+        )
+        agg["Mean"] = agg["Mean"].round(3)
+        agg["Max"] = agg["Max"].round(3)
+
+    return {
+        "Scenario→MacroThemes": macro_df,
+        "MacroThemes→Taxonomies": macro_expanded,
+        "Direct_Scenario→Taxonomy": direct_df,
+        "Macro_Aggregated_Summary": agg,
+    }
 
 
-if use_sentence_transformer:
+mode = args.similarity_mode
+if mode == "sentence-transformer":
+    if _HAS_ST:
+        backend = "sentence-transformer"
+    else:
+        if _HAS_SKLEARN:
+            backend = "tfidf"
+        else:
+            backend = "bow"
+        print(
+            "sentence-transformers requested but unavailable; "
+            f"falling back to {backend} similarity."
+        )
+elif mode == "tfidf":
+    if _HAS_SKLEARN:
+        backend = "tfidf"
+    else:
+        backend = "bow"
+        print(
+            "TF-IDF similarity requested but scikit-learn is unavailable; "
+            "falling back to bag-of-words."
+        )
+elif mode == "bow":
+    backend = "bow"
+else:  # auto
+    if _HAS_ST:
+        backend = "sentence-transformer"
+    elif _HAS_SKLEARN:
+        backend = "tfidf"
+    else:
+        backend = "bow"
+    if backend != "sentence-transformer":
+        print(
+            "sentence-transformers not available; "
+            f"using {backend} cosine similarity instead."
+        )
+
+
+if backend == "sentence-transformer":
     # ======== EMBEDDING MODEL ========
     model = SentenceTransformer("all-mpnet-base-v2")
     scenario_emb = model.encode(sentences, convert_to_tensor=True)
@@ -310,13 +589,10 @@ if use_sentence_transformer:
         cosine_scores = cosine_scores_matrix.cpu().numpy()
     else:
         cosine_scores = cosine_scores_matrix.cpu().tolist()
+elif backend == "tfidf":
+    cosine_scores = _tfidf_cosine_similarities(sentences, taxonomy_labels)
 else:
-    if mode == "auto" and not _HAS_ST:
-        print(
-            "sentence-transformers not available; using bag-of-words cosine"
-            " similarity scores instead."
-        )
-    elif mode == "bow":
+    if mode == "bow":
         print("Bag-of-words similarity requested; skipping sentence-transformers.")
     cosine_scores = _bow_cosine_similarities(sentences, taxonomy_labels)
 
@@ -351,6 +627,10 @@ summary_records = [
 ]
 summary_records.sort(key=lambda item: item["Mean"], reverse=True)
 
+macro_sheets: Dict[str, "pd.DataFrame"] = {}
+if bridge_path:
+    macro_sheets = _run_macro_bridge_pipeline(sentences, taxonomy_labels, bridge_path)
+
 if _HAS_PANDAS:
     df = pd.DataFrame(filtered_records)
     summary = pd.DataFrame(summary_records)
@@ -359,6 +639,8 @@ if _HAS_PANDAS:
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Sentence-Level Mapping", index=False)
         summary.to_excel(writer, sheet_name="Aggregated Summary", index=False)
+        for sheet_name, sheet_df in macro_sheets.items():
+            sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
     print(f"✅ Completed. Results saved to {output_path}")
 else:
     # Fallback: write CSV reports when pandas/openpyxl are unavailable.
