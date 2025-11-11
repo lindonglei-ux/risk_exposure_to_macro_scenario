@@ -1,1 +1,0 @@
-"""corpus_pipeline: Modular PDF-to-text corpus builder for macro ↔ OpRisk training"""
