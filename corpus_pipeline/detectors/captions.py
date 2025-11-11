@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict, Any
 
-CAPTION_PAT = re.compile(r'(?i)\b(?:exhibit|figure|table|chart)\s*\d+\s*[:\-–]\s*')
+CAPTION_PAT = re.compile(r'(?i)\b(?:exhibit|figure|table|chart)\s*\d+(?:\s*[:\-–]\s*|\s+|$)')
 
 def find_captions(blocks: List[Dict[str,Any]]) -> List[Dict[str,Any]]:
     caps = []
