@@ -42,10 +42,10 @@ def process_pdf(pdf_path: Path, args):
         exhibits = []
         if args.extract_exhibits:
             caps = find_captions(blocks)
-            _, height = page_size(pdf_path, i)
+            width, height = page_size(pdf_path, i)
             for idx, cap in enumerate(caps):
                 nxt = caps[idx+1]["bbox"] if idx+1 < len(caps) else None
-                region = compute_exhibit_region(cap["bbox"], page_height=height, next_caption_bbox=nxt, min_height=args.exhibit_min_height)
+                region = compute_exhibit_region(cap["bbox"], page_height=height, next_caption_bbox=nxt, min_height=args.exhibit_min_height, page_width=width)
                 pix = get_page_pixmap(pdf_path, i, clip=region, dpi=args.ocr_dpi) if args.ocr_exhibits else None
                 pngb = pix.tobytes("png") if pix else None
                 harvested = harvest_exhibit_text(blocks, region, page_png_bytes=pngb,
