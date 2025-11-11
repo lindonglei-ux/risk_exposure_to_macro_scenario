@@ -1,6 +1,6 @@
 import argparse, json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .extractors.pdf_text import extract_page_text_blocks, num_pages, page_size, get_page_pixmap
 from .detectors.captions import find_captions
 from .detectors.columns import reorder_two_columns
@@ -23,7 +23,21 @@ def blocks_to_lines(blocks: List[Dict[str,Any]]) -> List[str]:
                 out.append(ln)
     return out
 
+def _load_lexicon(path_str: Optional[str]) -> Dict[str, Any]:
+    if not path_str:
+        return {}
+    lex_path = Path(path_str)
+    if not lex_path.exists():
+        return {}
+    return json.loads(lex_path.read_text(encoding="utf-8"))
+
+
 def process_pdf(pdf_path: Path, args):
+    macro_lexicon = {}
+    micro_lexicon = {}
+    if getattr(args, "normalize_exhibits", False):
+        macro_lexicon = _load_lexicon(getattr(args, "macro_lexicon", None))
+        micro_lexicon = _load_lexicon(getattr(args, "micro_lexicon", None))
     pages = []
     n = num_pages(pdf_path)
     for i in range(n):
@@ -52,9 +66,12 @@ def process_pdf(pdf_path: Path, args):
                                                 ocr_fn=(lambda b: ocr_region_from_bytes(b, psm=args.ocr_psm)) if args.ocr_exhibits else None)
                 rec = {"doc": pdf_path.name, "page": i, "exhibit_id": cap.get("ordinal"), "caption": cap.get("text"), "region": region, **harvested}
                 if args.normalize_exhibits:
-                    macro_lex = json.loads(Path(args.macro_lexicon).read_text(encoding="utf-8")) if args.macro_lexicon and Path(args.macro_lexicon).exists() else {}
-                    micro_lex = json.loads(Path(args.micro_lexicon).read_text(encoding="utf-8")) if args.micro_lexicon and Path(args.micro_lexicon).exists() else {}
-                    rec["triples"] = normalize_exhibit((harvested.get("raw_text") or "") + "\n" + (harvested.get("ocr_text") or ""), harvested.get("bullets") or [], macro_lex, micro_lex)
+                    rec["triples"] = normalize_exhibit(
+                        (harvested.get("raw_text") or "") + "\n" + (harvested.get("ocr_text") or ""),
+                        harvested.get("bullets") or [],
+                        macro_lexicon,
+                        micro_lexicon,
+                    )
                 exhibits.append(rec)
         segs = segment_text(cleaned, mode=args.segment_by, max_tokens=args.max_len)
         pages.append({"page": i, "cleaned": cleaned, "segments": segs, "exhibits": exhibits})
