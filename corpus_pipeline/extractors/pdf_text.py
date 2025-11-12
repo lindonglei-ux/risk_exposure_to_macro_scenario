@@ -429,13 +429,75 @@ class _SimplePDFDocument:
                             parsed_value = _parse_value(token_stream)
                     except Exception:
                         parsed_value = None
-            self._objects[obj_id] = _PDFObject(
+            obj_record = _PDFObject(
                 obj_id,
                 gen,
                 dictionary,
                 decoded_stream,
                 parsed_value,
             )
+            self._objects[obj_id] = obj_record
+            if (
+                dictionary
+                and dictionary.get("Type") == "ObjStm"
+                and decoded_stream is not None
+            ):
+                self._parse_object_stream(decoded_stream, dictionary)
+
+    def _parse_object_stream(self, stream: bytes, dictionary: Dict[str, Any]) -> None:
+        try:
+            count = int(dictionary.get("N", 0))
+            header_len = int(dictionary.get("First", 0))
+        except (TypeError, ValueError):
+            return
+        if count <= 0 or header_len < 0 or header_len > len(stream):
+            return
+        header_bytes = stream[:header_len]
+        data_bytes = stream[header_len:]
+        try:
+            header_text = header_bytes.decode("latin1", errors="ignore")
+        except Exception:
+            return
+        header_parts = header_text.strip().split()
+        if len(header_parts) < count * 2:
+            return
+        entries: List[Tuple[int, int]] = []
+        for i in range(0, count * 2, 2):
+            try:
+                obj_no = int(header_parts[i])
+                offset = int(header_parts[i + 1])
+            except (ValueError, IndexError):
+                continue
+            entries.append((obj_no, offset))
+        if not entries:
+            return
+        entries.sort(key=lambda itm: itm[1])
+        for idx, (obj_no, offset) in enumerate(entries):
+            if offset < 0 or offset >= len(data_bytes):
+                continue
+            next_offset = entries[idx + 1][1] if idx + 1 < len(entries) else len(data_bytes)
+            if next_offset < offset:
+                continue
+            obj_data = data_bytes[offset:next_offset].strip()
+            if not obj_data:
+                continue
+            parsed_value: Any = None
+            try:
+                tokens = _tokenize(obj_data)
+                token_stream = _TokenStream(tokens)
+                if token_stream.has_more():
+                    parsed_value = _parse_value(token_stream)
+            except Exception:
+                parsed_value = None
+            dict_value = parsed_value if isinstance(parsed_value, dict) else None
+            if obj_no not in self._objects:
+                self._objects[obj_no] = _PDFObject(
+                    obj_no,
+                    0,
+                    dict_value,
+                    None,
+                    parsed_value,
+                )
 
     def _resolve_ref(self, value: Any) -> Optional[_PDFObject]:
         if isinstance(value, tuple) and len(value) == 2:
