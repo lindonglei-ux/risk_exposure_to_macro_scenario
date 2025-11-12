@@ -18,6 +18,19 @@ def blocks_to_lines(blocks: List[Dict[str,Any]]) -> List[str]:
                 out.append(ln)
     return out
 
+def collect_pdf_paths(input_path: Path) -> List[Path]:
+    """Return a list of PDF paths to process from a file or directory."""
+    if input_path.is_dir():
+        pdfs = sorted(p for p in input_path.glob("*.pdf") if p.is_file())
+        if not pdfs:
+            raise ValueError(f"No PDF files found in directory: {input_path}")
+        return pdfs
+    if input_path.is_file():
+        if input_path.suffix.lower() != ".pdf":
+            raise ValueError(f"Input file must be a PDF: {input_path}")
+        return [input_path]
+    raise FileNotFoundError(f"Input path does not exist: {input_path}")
+
 def process_pdf(pdf_path: Path, args):
     pages = []
     n = num_pages(pdf_path)
@@ -57,10 +70,12 @@ def main():
     pdf = Path(args.input_pdf)
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
-    pages = process_pdf(pdf, args)
-    # narrative
-    (out_dir / (pdf.stem + ".txt")).write_text("\n".join(p["cleaned"] for p in pages if p["cleaned"]), encoding="utf-8")
-    write_jsonl(out_dir / (pdf.stem + ".jsonl"), [{"page":p["page"], "segment_index":i, "text":s} for p in pages for i,s in enumerate(p["segments"])])
+    pdf_paths = collect_pdf_paths(pdf)
+    for pdf_path in pdf_paths:
+        pages = process_pdf(pdf_path, args)
+        # narrative
+        (out_dir / (pdf_path.stem + ".txt")).write_text("\n".join(p["cleaned"] for p in pages if p["cleaned"]), encoding="utf-8")
+        write_jsonl(out_dir / (pdf_path.stem + ".jsonl"), [{"page":p["page"], "segment_index":i, "text":s} for p in pages for i,s in enumerate(p["segments"])])
     print("Done.")
 if __name__ == "__main__":
     main()
