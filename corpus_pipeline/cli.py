@@ -53,7 +53,13 @@ def process_pdf(pdf_path: Path, args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_pdf", required=True)
+    ap.add_argument(
+        "--input_path",
+        "--input_pdf",
+        dest="input_path",
+        required=True,
+        help="Path to a PDF file or a directory containing PDF files.",
+    )
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--segment_by", choices=["sentence","paragraph"], default="sentence")
     ap.add_argument("--max_len", type=int, default=512)
@@ -67,7 +73,7 @@ def main():
     ap.add_argument("--columns", type=int, default=1)
 
     args = ap.parse_args()
-    pdf = Path(args.input_pdf)
+    pdf = Path(args.input_path)
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
     pdf_paths = collect_pdf_paths(pdf)
